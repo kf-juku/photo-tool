@@ -81,13 +81,16 @@
   .modal-foot{display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;border-top:1px solid var(--line);position:sticky;bottom:0;background:#fff;}
   .x-btn{border:none;background:transparent;font-size:20px;color:var(--muted);cursor:pointer;line-height:1;padding:2px 6px;}
   /* retouch editor */
-  .rt-wrap{display:flex;gap:14px;}
-  .rt-tools{width:210px;flex-shrink:0;}
+  .rt-modal{width:96vw;max-width:96vw;height:94vh;max-height:94vh;display:flex;flex-direction:column;overflow:hidden;}
+  .rt-modal .modal-body{flex:1;min-height:0;padding:14px 16px;}
+  .rt-wrap{display:flex;gap:14px;height:100%;}
+  .rt-tools{width:220px;flex-shrink:0;overflow-y:auto;padding-right:4px;}
   .rt-tool-btn{display:flex;align-items:center;gap:8px;width:100%;border:1px solid var(--line);background:#fff;padding:9px 10px;border-radius:8px;margin-bottom:6px;font-weight:700;font-size:12px;color:var(--text);text-align:left;}
   .rt-tool-btn.on{background:var(--blue-l);border-color:var(--blue);color:var(--blue-d);}
   .rt-tool-btn .ic{font-size:16px;}
-  .rt-canvas-wrap{display:flex;align-items:center;justify-content:center;background:#eef1f6;border-radius:10px;padding:10px;min-width:400px;min-height:340px;position:relative;overflow:hidden;}
-  .rt-canvas-wrap canvas{background:#fff;box-shadow:var(--shadow);max-width:60vw;max-height:64vh;touch-action:none;}
+  .rt-canvas-wrap{flex:1;min-width:0;height:100%;display:flex;align-items:center;justify-content:center;background:#eef1f6;border-radius:10px;padding:10px;position:relative;overflow:hidden;}
+  .rt-canvas-wrap canvas{background:#fff;touch-action:none;}
+  #rtCanvas{box-shadow:var(--shadow);}
   #rtCanvas{cursor:none;}
   #rtCursor{background:transparent;}
   .stamp-picker{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;}
@@ -187,6 +190,8 @@
         <span class="tb-label" id="bCounter">-</span>
         <button class="btn sm" onclick="nextImgB()">次へ →</button>
         <span class="sep"></span>
+        <span class="tb-label">ファイル名</span>
+        <input type="text" id="bName" style="width:220px" oninput="var im=images[bIndex]; if(im) im.trimName=this.value;">
         <button class="btn sm primary" onclick="saveCurrentB()">この写真を保存</button>
         <span class="tb-label" id="bHint" style="color:var(--muted)">枠をドラッグで移動 / 角を掴んでサイズ変更</span>
       </div>
@@ -249,7 +254,7 @@
 
 <!-- RETOUCH EDITOR -->
 <div class="overlay" id="retouchOverlay">
-  <div class="modal" style="width:840px;">
+  <div class="modal rt-modal">
     <div class="modal-head">
       <h2>✨ 加工エディタ</h2>
       <button class="x-btn" onclick="closeRetouch()">×</button>
@@ -263,7 +268,7 @@
           <button class="rt-tool-btn" data-tool="blur" onclick="setRtTool('blur')"><span class="ic">💧</span>顔隠し・ぼかし</button>
           <button class="rt-tool-btn" data-tool="stamp" onclick="setRtTool('stamp')"><span class="ic">😀</span>スタンプ</button>
 
-          <div class="field" style="margin-top:12px;">
+          <div class="field" id="brushField" style="margin-top:12px;">
             <label>ブラシの太さ <span id="brushVal" style="color:var(--muted)">40</span></label>
             <input type="range" id="brushSize" min="8" max="140" value="40" style="width:100%;accent-color:var(--blue)" oninput="document.getElementById('brushVal').textContent=this.value;drawRtCursor()">
           </div>
@@ -275,8 +280,8 @@
             <label>スタンプを選ぶ</label>
             <div class="stamp-picker" id="stampPicker"></div>
             <label style="margin-top:8px;">大きさ <span id="stampSzVal" style="color:var(--muted)">80</span></label>
-            <input type="range" id="stampSize" min="24" max="260" value="80" style="width:100%;accent-color:var(--blue)" oninput="document.getElementById('stampSzVal').textContent=this.value;drawRtCursor()">
-            <div class="mini" style="margin-top:4px;">キャンバスをクリックで配置。ドラッグで移動できます。</div>
+            <input type="range" id="stampSize" min="24" max="260" value="80" style="width:100%;accent-color:var(--blue)" oninput="document.getElementById('stampSzVal').textContent=this.value;onStampSizeInput()">
+            <div class="mini" style="margin-top:4px;">写真をクリックで配置。置いたスタンプは、ドラッグで移動・角の■で大きさ変更・右上の×で削除。</div>
           </div>
           <div style="display:flex;gap:6px;margin-top:6px;">
             <button class="btn sm" style="flex:1" onclick="rtUndo()">元に戻す</button>
@@ -286,6 +291,7 @@
         <div class="rt-canvas-wrap" id="rtCanvasWrap">
           <div id="rtCanvasStack" style="position:relative;line-height:0;">
             <canvas id="rtCanvas"></canvas>
+            <canvas id="rtStampLayer" style="position:absolute;left:0;top:0;pointer-events:none;background:transparent;"></canvas>
             <canvas id="rtCursor" style="position:absolute;left:0;top:0;pointer-events:none;background:transparent;"></canvas>
           </div>
         </div>
@@ -742,6 +748,10 @@ var cropAspect='free';
 var cropRect=null; // {x,y,w,h} キャンバス座標
 var cropDrag=null;
 
+/* 元の名前が YYYYMMDD_ で始まるときは今日の日付を足さない */
+function defaultTrimName(im){
+  return (/^\d{8}_/.test(im.name) ? '' : todayStr()+'_') + im.name + '_trim';
+}
 function setupModeB(){
   if(!images.length){ $('canvasB').style.display='none'; $('hintB').style.display='block'; $('bCounter').textContent='-'; return; }
   $('hintB').style.display='none'; $('canvasB').style.display='block';
@@ -758,6 +768,7 @@ function setupModeB(){
   // 初期クロップ枠
   initCropRect(im);
   $('bCounter').textContent=(bIndex+1)+' / '+images.length;
+  $('bName').value = im.trimName || defaultTrimName(im);
   drawModeB();
   fitStageCanvasB();
 }
@@ -898,7 +909,8 @@ function saveCurrentB(){
     octx.globalCompositeOperation='source-over';
   }
   var fmt=exportFormat;
-  downloadCanvas(out, todayStr()+'_'+im.name+'_trim', fmt);
+  var nm=$('bName').value.trim() || defaultTrimName(im);
+  downloadCanvas(out, nm, fmt);
   toast('保存しました（'+(bIndex+1)+'/'+images.length+'）');
 }
 
@@ -913,13 +925,18 @@ var rtStampDrag=null;
 var rtCursorPos=null, rtDispScale=1;
 function sizeRtCanvases(){
   if(!rtCanvas) return;
-  var maxW=window.innerWidth*0.60, maxH=window.innerHeight*0.64;
-  rtDispScale=Math.min(maxW/rtCanvas.width, maxH/rtCanvas.height, 1);
+  var wrap=document.getElementById('rtCanvasWrap');
+  var maxW=Math.max(100, wrap.clientWidth-20), maxH=Math.max(100, wrap.clientHeight-20);
+  rtDispScale=Math.min(maxW/rtCanvas.width, maxH/rtCanvas.height);
   var cw=Math.round(rtCanvas.width*rtDispScale), ch=Math.round(rtCanvas.height*rtDispScale);
   rtCanvas.style.width=cw+'px'; rtCanvas.style.height=ch+'px';
-  var cur=document.getElementById('rtCursor');
-  cur.width=rtCanvas.width; cur.height=rtCanvas.height;
-  cur.style.width=cw+'px'; cur.style.height=ch+'px';
+  ['rtCursor','rtStampLayer'].forEach(function(id){
+    var c=document.getElementById(id);
+    if(c.width!==rtCanvas.width) c.width=rtCanvas.width;
+    if(c.height!==rtCanvas.height) c.height=rtCanvas.height;
+    c.style.width=cw+'px'; c.style.height=ch+'px';
+  });
+  drawStampLayer();
 }
 function rtCross(cctx,x,y,s){ cctx.save(); cctx.strokeStyle='rgba(0,0,0,0.6)'; cctx.lineWidth=1/rtDispScale; cctx.beginPath(); cctx.moveTo(x-s,y); cctx.lineTo(x+s,y); cctx.moveTo(x,y-s); cctx.lineTo(x,y+s); cctx.stroke(); cctx.restore(); }
 function drawRtCursor(){
@@ -928,6 +945,11 @@ function drawRtCursor(){
   if(!rtSourceIm || !rtCursorPos) return;
   var p=rtCursorPos, s=6/rtDispScale;
   if(rtTool==='stamp'){
+    var hd=rtStampDrag&&rtStampDrag.mode==='resize' ? {k:'_'} : hitHandle(p.x,p.y);
+    if(hd){ rtCanvas.style.cursor = hd.k==='del'?'pointer' : (hd.k==='nw'||hd.k==='se'||hd.k==='_' && rtStampDrag.sx===rtStampDrag.sy)?'nwse-resize':'nesw-resize'; return; }
+    if(rtStampDrag || hitStamp(p.x,p.y)>=0){ rtCanvas.style.cursor='move'; return; }
+    if(rtSelStamp>=0){ rtCanvas.style.cursor='default'; return; }
+    rtCanvas.style.cursor='none';
     var sz=parseInt(document.getElementById('stampSize').value,10)/rtDispScale;
     cctx.save(); cctx.globalAlpha=0.5; cctx.font=sz+'px sans-serif'; cctx.textAlign='center'; cctx.textBaseline='middle';
     cctx.fillText(rtStampChar,p.x,p.y); cctx.restore();
@@ -958,33 +980,46 @@ function openRetouch(){
   rtScale=1;
   rtCanvas.width=im.src.width; rtCanvas.height=im.src.height;
   rtCtx.drawImage(im.src,0,0);
-  sizeRtCanvases();
-  rtUndoStack=[]; pushUndo();
-  setRtTool('smooth'); buildStampPicker();
+  rtStamps=[]; rtSelStamp=-1; rtStampDrag=null;
+  rtUndoStack=[];
   $('retouchOverlay').classList.add('show');
+  setRtTool('smooth'); buildStampPicker();
+  sizeRtCanvases();
 }
-function closeRetouch(){ $('retouchOverlay').classList.remove('show'); rtSourceIm=null; rtUndoStack=[]; }
+function closeRetouch(){ $('retouchOverlay').classList.remove('show'); rtSourceIm=null; rtUndoStack=[]; rtStamps=[]; rtSelStamp=-1; rtStampDrag=null; }
 function setRtTool(t){
   rtTool=t;
   document.querySelectorAll('.rt-tool-btn').forEach(function(b){ b.classList.toggle('on', b.dataset.tool===t); });
   $('stampField').style.display = t==='stamp'?'block':'none';
+  $('brushField').style.display = t==='stamp'?'none':'block';
   $('strengthField').style.display = (t==='smooth'||t==='mosaic'||t==='blur')?'block':'none';
+  if(t!=='stamp'){ rtSelStamp=-1; updateStampDelBtn(); }
+  if(rtCanvas) rtCanvas.style.cursor='none';
+  drawStampLayer();
   drawRtCursor();
 }
+/* 元に戻す：変更する「前」の状態を積む。ブラシは画像、スタンプは配置一覧を保存 */
 function pushUndo(){
-  if(rtUndoStack.length>=12) rtUndoStack.shift();
-  rtUndoStack.push(rtCtx.getImageData(0,0,rtCanvas.width,rtCanvas.height));
+  if(rtUndoStack.length>=30) rtUndoStack.shift();
+  rtUndoStack.push({img: rtCtx.getImageData(0,0,rtCanvas.width,rtCanvas.height)});
+}
+function copyStamps(a){ return (a||rtStamps).map(function(o){ return {ch:o.ch,x:o.x,y:o.y,sz:o.sz}; }); }
+function pushStampUndo(snap){
+  if(rtUndoStack.length>=30) rtUndoStack.shift();
+  rtUndoStack.push({stamps: snap || copyStamps()});
 }
 function rtUndo(){
-  if(rtUndoStack.length<2){ return; }
-  rtUndoStack.pop();
-  rtCtx.putImageData(rtUndoStack[rtUndoStack.length-1],0,0);
+  if(!rtUndoStack.length) return;
+  var e=rtUndoStack.pop();
+  if(e.img) rtCtx.putImageData(e.img,0,0);
+  if(e.stamps){ rtStamps=e.stamps; rtSelStamp=-1; updateStampDelBtn(); drawStampLayer(); }
 }
 function rtResetAll(){
   if(!rtSourceIm) return;
   rtCtx.clearRect(0,0,rtCanvas.width,rtCanvas.height);
   rtCtx.drawImage(rtSourceIm.orig,0,0,rtCanvas.width,rtCanvas.height);
-  rtUndoStack=[]; pushUndo();
+  rtStamps=[]; rtSelStamp=-1; rtStampDrag=null; updateStampDelBtn(); drawStampLayer();
+  rtUndoStack=[];
 }
 function rtPos(e){ var r=rtCanvas.getBoundingClientRect(); return {x:(e.clientX-r.left)*(rtCanvas.width/r.width), y:(e.clientY-r.top)*(rtCanvas.height/r.height)}; }
 
@@ -994,11 +1029,13 @@ document.addEventListener('DOMContentLoaded', function(){
   rc.addEventListener('mousedown', function(e){
     if(!rtSourceIm) return;
     var p=rtPos(e);
-    if(rtTool==='stamp'){ placeStamp(p.x,p.y); return; }
+    if(rtTool==='stamp'){ stampMouseDown(p); return; }
     rtDrawing=true; rtLast=p; pushUndo(); applyBrush(p.x,p.y);
   });
   rc.addEventListener('mousemove', function(e){
-    var p=rtPos(e); rtCursorPos=p; drawRtCursor();
+    var p=rtPos(e); rtCursorPos=p;
+    if(rtStampDrag){ stampDragMove(p); }
+    drawRtCursor();
     if(!rtDrawing) return;
     // 補間
     var steps=Math.ceil(Math.hypot(p.x-rtLast.x,p.y-rtLast.y)/6);
@@ -1007,7 +1044,14 @@ document.addEventListener('DOMContentLoaded', function(){
   });
   rc.addEventListener('mouseenter', function(e){ rtCursorPos=rtPos(e); drawRtCursor(); });
   rc.addEventListener('mouseleave', function(){ rtCursorPos=null; drawRtCursor(); });
-  window.addEventListener('mouseup', function(){ rtDrawing=false; });
+  window.addEventListener('mousemove', function(e){ if(rtStampDrag && e.target!==rc){ stampDragMove(rtPos(e)); } });
+  window.addEventListener('mouseup', function(){ rtDrawing=false; stampMouseUp(); });
+  document.addEventListener('keydown', function(e){
+    if(!$('retouchOverlay').classList.contains('show')) return;
+    var tg=(e.target&&e.target.tagName)||'';
+    if(tg==='INPUT'||tg==='TEXTAREA') return;
+    if((e.key==='Delete'||e.key==='Backspace') && rtTool==='stamp' && rtSelStamp>=0){ e.preventDefault(); deleteSelectedStamp(); }
+  });
 });
 
 function brushRadius(){ return parseInt($('brushSize').value,10) / rtDispScale; }
@@ -1097,16 +1141,138 @@ function brushBlur(cx,cy,R,x0,y0,w,h){
   }
   rtCtx.putImageData(img,x0,y0);
 }
-/* スタンプ配置 */
-function placeStamp(x,y){
-  pushUndo();
-  var sz=parseInt($('stampSize').value,10)/rtDispScale;
-  rtCtx.font=sz+'px sans-serif'; rtCtx.textAlign='center'; rtCtx.textBaseline='middle';
-  rtCtx.fillText(rtStampChar, x, y);
+/* スタンプ：「この加工を反映」まで写真に焼き付けず、一覧（rtStamps）で持つ。座標と大きさは原寸の画素 */
+var rtStamps=[], rtSelStamp=-1;
+function drawStampsOn(ctx, list){
+  list.forEach(function(o){
+    ctx.save(); ctx.font=o.sz+'px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(o.ch, o.x, o.y); ctx.restore();
+  });
+}
+function drawStampLayer(){
+  var c=document.getElementById('rtStampLayer'); if(!c) return;
+  var ctx=c.getContext('2d'); ctx.clearRect(0,0,c.width,c.height);
+  drawStampsOn(ctx, rtStamps);
+  if(rtTool==='stamp' && rtSelStamp>=0 && rtStamps[rtSelStamp]){
+    var o=rtStamps[rtSelStamp], h=o.sz*0.6, k=1/rtDispScale;
+    ctx.save();
+    ctx.lineWidth=1.5*k; ctx.strokeStyle='#2f6fed'; ctx.strokeRect(o.x-h,o.y-h,h*2,h*2);
+    stampHandles().forEach(function(q){
+      if(q.k==='del') return;
+      ctx.fillStyle='#fff'; ctx.fillRect(q.x-q.r,q.y-q.r,q.r*2,q.r*2);
+      ctx.lineWidth=1.5*k; ctx.strokeStyle='#2f6fed'; ctx.strokeRect(q.x-q.r,q.y-q.r,q.r*2,q.r*2);
+    });
+    var d=stampHandles().filter(function(q){return q.k==='del';})[0];
+    ctx.beginPath(); ctx.arc(d.x,d.y,d.r,0,Math.PI*2); ctx.fillStyle='#e5484d'; ctx.fill();
+    ctx.lineWidth=1.5*k; ctx.strokeStyle='#fff'; ctx.stroke();
+    var a=d.r*0.42; ctx.lineWidth=2*k; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(d.x-a,d.y-a); ctx.lineTo(d.x+a,d.y+a); ctx.moveTo(d.x+a,d.y-a); ctx.lineTo(d.x-a,d.y+a); ctx.stroke();
+    ctx.restore();
+  }
+}
+/* 選択中スタンプの操作点：角の■（nw/sw/se）と右上の×。大きさは画面上で一定 */
+function stampHandles(){
+  var o=rtStamps[rtSelStamp]; if(!o) return [];
+  var h=o.sz*0.6, k=1/rtDispScale, r=5*k, R=11*k;
+  var W=rtCanvas.width, H=rtCanvas.height;
+  var dx=Math.min(Math.max(o.x+h,R),W-R), dy=Math.min(Math.max(o.y-h,R),H-R);
+  return [
+    {k:'nw',x:o.x-h,y:o.y-h,r:r},{k:'sw',x:o.x-h,y:o.y+h,r:r},{k:'se',x:o.x+h,y:o.y+h,r:r},
+    {k:'del',x:dx,y:dy,r:R}
+  ];
+}
+function hitHandle(x,y){
+  if(rtTool!=='stamp' || rtSelStamp<0) return null;
+  var hs=stampHandles(), pad=4/rtDispScale;
+  for(var i=hs.length-1;i>=0;i--){
+    var q=hs[i];
+    if(q.k==='del'){ if(Math.hypot(x-q.x,y-q.y)<=q.r+pad) return q; }
+    else if(Math.abs(x-q.x)<=q.r+pad && Math.abs(y-q.y)<=q.r+pad) return q;
+  }
+  return null;
+}
+function hitStamp(x,y){
+  for(var i=rtStamps.length-1;i>=0;i--){
+    var o=rtStamps[i], h=o.sz*0.55;
+    if(Math.abs(x-o.x)<=h && Math.abs(y-o.y)<=h) return i;
+  }
+  return -1;
+}
+function updateStampDelBtn(){}
+function selectStamp(i){
+  rtSelStamp=i; updateStampDelBtn();
+  if(i>=0){
+    var v=Math.round(rtStamps[i].sz*rtDispScale);
+    var sl=$('stampSize'); v=Math.max(+sl.min, Math.min(+sl.max, v));
+    sl.value=v; $('stampSzVal').textContent=v;
+  }
+  drawStampLayer();
+}
+function stampMouseDown(p){
+  var before=copyStamps();
+  var hd=hitHandle(p.x,p.y);
+  if(hd && hd.k==='del'){ deleteSelectedStamp(); return; }
+  if(hd){
+    var o0=rtStamps[rtSelStamp], h0=o0.sz*0.6;
+    // 反対側の角を固定して大きさを変える
+    var ax = hd.k==='se' ? o0.x-h0 : o0.x+h0;
+    var ay = hd.k==='nw' ? o0.y+h0 : o0.y-h0;
+    rtStampDrag={mode:'resize', ax:ax, ay:ay, sx:(hd.k==='se'?1:-1), sy:(hd.k==='nw'?-1:1), before:before, moved:false};
+    return;
+  }
+  var i=hitStamp(p.x,p.y);
+  if(i<0 && rtSelStamp>=0){ selectStamp(-1); drawRtCursor(); return; } // 何もない所のクリックは、まず選択を外す
+  if(i<0){
+    var sz=parseInt($('stampSize').value,10)/rtDispScale;
+    rtStamps.push({ch:rtStampChar, x:p.x, y:p.y, sz:sz});
+    pushStampUndo(before);
+    selectStamp(rtStamps.length-1);
+    return;
+  }
+  // 既存スタンプ：選んでドラッグ開始（一番上に持ってくる）
+  var o=rtStamps.splice(i,1)[0]; rtStamps.push(o);
+  selectStamp(rtStamps.length-1);
+  rtStampDrag={mode:'move', dx:p.x-o.x, dy:p.y-o.y, before:before, moved:false};
+}
+function stampDragMove(p){
+  var o=rtStamps[rtSelStamp], d=rtStampDrag; if(!o) return;
+  if(d.mode==='resize'){
+    var side=Math.max(Math.abs(p.x-d.ax), Math.abs(p.y-d.ay), 16/rtDispScale);
+    o.sz=side/1.2;
+    o.x=d.ax+d.sx*side/2; o.y=d.ay+d.sy*side/2;
+    var sl=$('stampSize'), v=Math.max(+sl.min, Math.min(+sl.max, Math.round(o.sz*rtDispScale)));
+    sl.value=v; $('stampSzVal').textContent=v;
+  } else {
+    o.x=p.x-d.dx; o.y=p.y-d.dy;
+  }
+  d.moved=true;
+  drawStampLayer();
+}
+function stampMouseUp(){
+  if(!rtStampDrag) return;
+  if(rtStampDrag.moved) pushStampUndo(rtStampDrag.before);
+  rtStampDrag=null; drawRtCursor();
+}
+function onStampSizeInput(){
+  if(rtTool==='stamp' && rtSelStamp>=0 && rtStamps[rtSelStamp]){
+    if(!rtSizeEditing){ pushStampUndo(); rtSizeEditing=true; }
+    rtStamps[rtSelStamp].sz=parseInt($('stampSize').value,10)/rtDispScale;
+    drawStampLayer();
+  }
+  drawRtCursor();
+}
+var rtSizeEditing=false;
+document.addEventListener('change', function(e){ if(e.target && e.target.id==='stampSize') rtSizeEditing=false; });
+function deleteSelectedStamp(){
+  if(rtSelStamp<0) return;
+  pushStampUndo();
+  rtStamps.splice(rtSelStamp,1);
+  selectStamp(-1);
 }
 function applyRetouch(){
   if(!rtSourceIm) return;
   var im=rtSourceIm;
+  drawStampsOn(rtCtx, rtStamps);
   // 原寸canvasをそのまま採用（画質劣化なし）
   im.src=cloneCanvas(rtCanvas);
   im.w=im.src.width; im.h=im.src.height;
